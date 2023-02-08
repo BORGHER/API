@@ -1,0 +1,49 @@
+import requests
+import pandas as pd
+from binance.client import Client
+
+# Inicialização da API da Binance
+client = Client(api_key='SUA_CHAVE_API', api_secret='SEU_SEGREDO_API')
+
+# Configurações do bot
+symbol = 'BTCUSDT'  # par de negociação
+interval = Client.KLINE_INTERVAL_1MINUTE  # intervalo de tempo
+profit_margin = 0.01  # lucro desejado de 1%
+quantity = 0.1  # quantidade de BTC a ser negociada
+
+# Obter dados históricos de preços
+candlesticks = client.fetch_historical_klines(symbol, interval, "1 year ago UTC")
+df = pd.DataFrame(candlesticks, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'])
+df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+df.set_index('timestamp', inplace=True)
+df['close'] = df['close'].astype(float)
+
+# Cálculo das Bollinger Bands
+rolling_mean = df['close'].rolling(window=20).mean()
+rolling_std = df['close'].rolling(window=20).std()
+upper_band = rolling_mean + 2 * rolling_std
+lower_band = rolling_mean - 2 * rolling_std
+
+# Obter preço atual
+ticker = client.fetch_ticker(symbol)
+current_price = ticker['last']
+
+# Verificar se é hora de negociar
+if current_price > upper_band.iloc[-1]:
+    # Vender BTC
+    sell_price = current_price * (1 + profit_margin)  # preço de venda é 1% acima do preço atual
+    order = client.create_order(
+        symbol=symbol,
+        side=Client.SIDE_SELL,
+        type=Client.ORDER_TYPE_LIMIT,
+        timeInForce=Client.TIME_IN_FORCE_GTC,
+        quantity=quantity,  # quantidade de BTC a ser vendida
+        price=sell_price  # preço de venda é o preço calculado acima
+    )
+elif current_price < lower_band.iloc[-1]:
+    # Comprar BTC
+    buy_price = current_price * (1 - profit_margin)  # preço de compra é 1% abaixo do preço atual
+    order = client.create_order(
+        symbol=symbol,
+        side=Client.SIDE_BUY,
+        type=Client.ORDER_TYPE_LIMIT,
